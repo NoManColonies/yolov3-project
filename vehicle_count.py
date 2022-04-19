@@ -60,8 +60,8 @@ net = cv2.dnn.readNetFromDarknet(modelConfiguration, modelWeigheights)
 
 # Configure the network backend
 
-# net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
-# net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
+net.setPreferableBackend(cv2.dnn.DNN_BACKEND_CUDA)
+net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 
 # Define random colour for each class
 np.random.seed(42)
