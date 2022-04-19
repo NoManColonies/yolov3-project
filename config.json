@@ -1,0 +1,39 @@
+{
+  "cameras": [
+    {
+      "name": "camera1",
+      "path": "video_day1_hires.mp4",
+      "detection_box": {
+        "offset_y": 60,
+        "offset_x": 190,
+        "max_y": 358,
+        "max_x": 420,
+        "line_position_y": 105
+      },
+      "traffic_lights": [
+        {
+          "position_x": 274,
+          "position_y": 33,
+          "width": 4,
+          "height": 4
+        },
+        {
+          "position_x": 381,
+          "position_y": 11,
+          "width": 4,
+          "height": 4
+        },
+        {
+          "position_x": 392,
+          "position_y": 11,
+          "width": 4,
+          "height": 4
+        }
+      ]
+    }
+  ],
+  "traffic_light_color_boundries": {
+    "low": [0, 19, 124],
+    "high": [214, 204, 255]
+  }
+}
