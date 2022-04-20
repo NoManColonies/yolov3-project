@@ -206,7 +206,7 @@ class CameraInstance:
                                    frame, copied_original_frame)
             except TypeError as e:
                 capture_exception(e)
-                return False, True
+                return success, traffic_light_status
 
         # Draw the crossing lines
         cv2.line(frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),
