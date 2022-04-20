@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import csv
 from tracker import *
+from sentry_sdk import capture_exception
 
 
 class CameraInstance:
@@ -195,14 +196,17 @@ class CameraInstance:
             net.setInput(blob)
             layersNames = net.getLayerNames()
             # outputNames = [(layersNames[i[0] - 1]) for i in net.getUnconnectedOutLayers()]
-            outputNames = [(layersNames[i - 1])
-                           for i in net.getUnconnectedOutLayers()]
-            # Feed data to the network
-            outputs = net.forward(outputNames)
-
-            # Find the objects from the network output
-            self.__postProcess(outputs, cropped_detection_frame,
-                               frame, copied_original_frame)
+            try:
+                outputNames = [(layersNames[i - 1])
+                               for i in net.getUnconnectedOutLayers()]
+                # Feed data to the network
+                outputs = net.forward(outputNames)
+                # Find the objects from the network output
+                self.__postProcess(outputs, cropped_detection_frame,
+                                   frame, copied_original_frame)
+            except TypeError as e:
+                capture_exception(e)
+                return False, True
 
         # Draw the crossing lines
         cv2.line(frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),
