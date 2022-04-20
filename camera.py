@@ -197,6 +197,7 @@ class CameraInstance:
             layersNames = net.getLayerNames()
             # outputNames = [(layersNames[i[0] - 1]) for i in net.getUnconnectedOutLayers()]
             try:
+                # reason for type checking https://github.com/opencv/opencv/issues/20923
                 type_comparison_placeholder = np.zeros(1)
                 outputNames = [(layersNames[(i if type(i) is not type(type_comparison_placeholder) else i[0]) - 1])
                                for i in net.getUnconnectedOutLayers()]
