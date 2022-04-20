@@ -42,7 +42,7 @@ class CameraInstance:
 
         total_count = len(self.traffic_lights)
         positive_count = 0
-        required_count_ratio = 2/3
+        required_count_ratio = 1/2
 
         for traffic_light in self.traffic_lights:
             position_x, position_y, width, height = traffic_light.items()
@@ -68,6 +68,7 @@ class CameraInstance:
 
     def __processDetectedFrame(self, frame, id) -> None:
         cv2.imwrite(f'result/{self.name}_{id}.png', frame)
+        print(f"detected id: {id}")
 
     def __countVehicle(self, box_id, frame, original_frame) -> None:
         MIDDLE_LINE_POSITION = self.detection['line_position_y']
@@ -180,13 +181,14 @@ class CameraInstance:
         # check if video ran out of frame
         if not success:
             return success, False
-
-        traffic_light_status = self.__readTrafficLight(frame)
+        # resize frame
+        scaled_frame = cv2.resize(frame, (0, 0), None, 0.5, 0.5)
+        # read traffic light
+        traffic_light_status = self.__readTrafficLight(scaled_frame)
 
         if traffic_light_status:
-            # img = cv2.resize(img, (0, 0), None, 0.5, 0.5)
-            copied_original_frame = frame.copy()
-            cropped_detection_frame = frame[DETECTION_OFFSET_Y:DETECTION_MAX_Y,
+            scaled_original_frame = scaled_frame.copy()
+            cropped_detection_frame = scaled_frame[DETECTION_OFFSET_Y:DETECTION_MAX_Y,
                                             DETECTION_OFFSET_X:DETECTION_MAX_X]
             ih, iw, channels = cropped_detection_frame.shape
             blob = cv2.dnn.blobFromImage(
@@ -205,28 +207,28 @@ class CameraInstance:
                 outputs = net.forward(outputNames)
                 # Find the objects from the network output
                 self.__postProcess(outputs, cropped_detection_frame,
-                                   frame, copied_original_frame)
+                                   scaled_frame, scaled_original_frame)
             except TypeError as e:
                 capture_exception(e)
                 return success, traffic_light_status
 
         # Draw the crossing lines
-        cv2.line(frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),
+        cv2.line(scaled_frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),
                  (DETECTION_MAX_X, MIDDLE_LINE_POSITION), (255, 0, 255), 2)
-        cv2.line(frame, (DETECTION_OFFSET_X, TOP_LINE_POSITION),
+        cv2.line(scaled_frame, (DETECTION_OFFSET_X, TOP_LINE_POSITION),
                  (DETECTION_MAX_X, TOP_LINE_POSITION), (0, 0, 255), 2)
-        cv2.line(frame, (DETECTION_OFFSET_X, BOTTOM_LINE_POSITION),
+        cv2.line(scaled_frame, (DETECTION_OFFSET_X, BOTTOM_LINE_POSITION),
                  (DETECTION_MAX_X, BOTTOM_LINE_POSITION), (0, 0, 255), 2)
-        cv2.putText(frame, "Passed", (110, 20), cv2.FONT_HERSHEY_SIMPLEX,
+        cv2.putText(scaled_frame, "Passed", (110, 20), cv2.FONT_HERSHEY_SIMPLEX,
                     font_size, font_color, font_thickness)
-        cv2.putText(frame, f"Car:        {str(self.up_list[0])}", (20, 40),
+        cv2.putText(scaled_frame, f"Car:        {str(self.up_list[0])}", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, font_thickness)
-        cv2.putText(frame, f"Bus:        {str(self.up_list[1])}", (20, 60),
+        cv2.putText(scaled_frame, f"Bus:        {str(self.up_list[1])}", (20, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, font_thickness)
-        cv2.putText(frame, f"Truck:      {str(self.up_list[2])}", (20, 80),
+        cv2.putText(scaled_frame, f"Truck:      {str(self.up_list[2])}", (20, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, font_size, font_color, font_thickness)
 
         # Show the frames
-        cv2.imshow(f'{self.name} output', frame)
+        cv2.imshow(f'{self.name} output', scaled_frame)
 
         return success, traffic_light_status
