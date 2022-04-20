@@ -197,8 +197,7 @@ class CameraInstance:
             layersNames = net.getLayerNames()
             # outputNames = [(layersNames[i[0] - 1]) for i in net.getUnconnectedOutLayers()]
             try:
-                print([(i) for i in net.getUnconnectedOutLayers()])
-                outputNames = [(layersNames[i - 1])
+                outputNames = [(layersNames[(i if type(i) is not list() else len(i)) - 1])
                                for i in net.getUnconnectedOutLayers()]
                 # Feed data to the network
                 outputs = net.forward(outputNames)
