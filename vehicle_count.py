@@ -9,6 +9,20 @@ import numpy as np
 from tracker import *
 import json
 from camera import *
+import sentry_sdk
+from os import getenv
+from dotenv import load_dotenv
+# load .env file
+load_dotenv()
+# config sentry sdk
+sentry_sdk.init(
+    getenv("SENTRY_URL", ""),
+
+    # Set traces_sample_rate to 1.0 to capture 100%
+    # of transactions for performance monitoring.
+    # We recommend adjusting this value in production.
+    traces_sample_rate=1.0
+)
 
 # Initialize Tracker
 tracker = EuclideanDistTracker()
