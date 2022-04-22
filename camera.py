@@ -3,6 +3,7 @@ import cv2
 import csv
 from tracker import *
 from sentry_sdk import capture_exception
+from traffic_light import TrafficLightColor
 
 
 class CameraInstance:
@@ -22,6 +23,11 @@ class CameraInstance:
         # List for store vehicle count information
         self.temp_down_list = []
         self.up_list = [0, 0, 0]
+        # Current traffic light color
+        self.current_traffic_light = TrafficLightColor.OTHER
+        # Camera frames for rendering into a video evidences
+        self.__evidence_frames = []
+        self.__evidence_tracker = []
 
     def __del__(self):
         self.collectStats()
@@ -31,7 +37,7 @@ class CameraInstance:
         # Initialize the videocapture object
         self.cap = cv2.VideoCapture(self.path)
 
-    def __readTrafficLight(self, frame) -> bool:
+    def __readTrafficLight(self, frame) -> None:
         # create NumPy arrays from the boundaries
         lower = np.array(self.traffic_light_boundries['low'], dtype="uint8")
         upper = np.array(self.traffic_light_boundries['high'], dtype="uint8")
@@ -39,13 +45,16 @@ class CameraInstance:
         # the mask
         mask = cv2.inRange(frame, lower, upper)
         output = cv2.bitwise_and(frame, frame, mask=mask)
+        # read traffic light colors from configuration
+        red_lights, yellow_lights = self.traffic_lights.items()
 
-        total_count = len(self.traffic_lights)
-        positive_count = 0
-        required_count_ratio = 1/2
+        # red light section
+        total_red_light_count = len(red_lights[1])
+        positive_red_light_count = 0
+        required_red_light_count_ratio = 1/2
 
-        for traffic_light in self.traffic_lights:
-            position_x, position_y, width, height = traffic_light.items()
+        for red_traffic_light in red_lights[1]:
+            position_x, position_y, width, height = red_traffic_light.items()
             # create blank image for comparison
             blank = np.zeros((width[1], height[1], 3), dtype='uint8')
             traffic_light_mask = output[position_y[1]:
@@ -54,9 +63,37 @@ class CameraInstance:
                                         (width[1] + position_x[1])]
 
             if not np.array_equal(blank, traffic_light_mask):
-                positive_count = positive_count + 1
+                positive_red_light_count = positive_red_light_count + 1
+            cv2.imshow('Red Light', np.hstack([blank, traffic_light_mask]))
 
-        return positive_count / total_count >= required_count_ratio
+        if positive_red_light_count / total_red_light_count >= required_red_light_count_ratio:
+            self.current_traffic_light = TrafficLightColor.RED
+            return
+        # yellow light section
+        total_yellow_light_count = len(yellow_lights[1])
+        positive_yellow_light_count = 0
+        required_yellow_light_count_ratio = 1/2
+
+        for yellow_traffic_light in yellow_lights[1]:
+            position_x, position_y, width, height = yellow_traffic_light.items()
+            # create blank image for comparison
+            blank = np.zeros((width[1], height[1], 3), dtype='uint8')
+            traffic_light_mask = output[position_y[1]:
+                                        (height[1] + position_y[1]),
+                                        position_x[1]:
+                                        (width[1] + position_x[1])]
+
+            if not np.array_equal(blank, traffic_light_mask):
+                positive_yellow_light_count = positive_yellow_light_count + 1
+            cv2.imshow('Yellow Light', np.hstack([blank, traffic_light_mask]))
+
+        if positive_yellow_light_count / total_yellow_light_count >= required_yellow_light_count_ratio:
+            self.current_traffic_light = TrafficLightColor.YELLOW
+            return
+        # allow for delay between light switching from yellow to red color
+        if self.current_traffic_light is TrafficLightColor.YELLOW:
+            return
+        self.current_traffic_light = TrafficLightColor.OTHER
 
     # Function for finding the center of a rectangle
     def __findCenter(self, x, y, w, h) -> (int, int):
@@ -95,6 +132,36 @@ class CameraInstance:
 
         # Draw circle in the middle of the rectangle
         cv2.circle(frame, center, 2, (0, 0, 255), -1)
+
+    def __process(self, net, scaled_frame, input_size=320) -> None:
+        DETECTION_OFFSET_Y = self.detection['offset_y']
+        DETECTION_OFFSET_X = self.detection['offset_x']
+        DETECTION_MAX_Y = self.detection['max_y']
+        DETECTION_MAX_X = self.detection['max_x']
+        MIDDLE_LINE_POSITION = self.detection['line_position_y']
+        TOP_LINE_POSITION = self.detection['line_position_y'] - 10
+        BOTTOM_LINE_POSITION = self.detection['line_position_y'] + 10
+
+        scaled_original_frame = scaled_frame.copy()
+        cropped_detection_frame = scaled_frame[DETECTION_OFFSET_Y:DETECTION_MAX_Y,
+                                               DETECTION_OFFSET_X:DETECTION_MAX_X]
+        ih, iw, channels = cropped_detection_frame.shape
+        blob = cv2.dnn.blobFromImage(
+            cropped_detection_frame, 1 / 255, (input_size, input_size), [0, 0, 0], 1, crop=False)
+
+        # Set the input of the network
+        net.setInput(blob)
+        layersNames = net.getLayerNames()
+        # outputNames = [(layersNames[i[0] - 1]) for i in net.getUnconnectedOutLayers()]
+        # reason for type checking https://github.com/opencv/opencv/issues/20923
+        type_comparison_placeholder = np.zeros(1)
+        outputNames = [(layersNames[(i if type(i) is not type(type_comparison_placeholder) else i[0]) - 1])
+                       for i in net.getUnconnectedOutLayers()]
+        # Feed data to the network
+        outputs = net.forward(outputNames)
+        # Find the objects from the network output
+        self.__postProcess(outputs, cropped_detection_frame,
+                           scaled_frame, scaled_original_frame)
 
     def __postProcess(self, outputs, cropped_frame, frame, original_frame,
                       confThreshold=0.2,
@@ -152,9 +219,10 @@ class CameraInstance:
         # Update the tracker for each object
         boxes_ids = self.tracker.update(detection)
 
-        for box_id in boxes_ids:
-            self.__countVehicle(
-                box_id, frame, original_frame)
+        if self.current_traffic_light is TrafficLightColor.RED:
+            for box_id in boxes_ids:
+                self.__countVehicle(
+                    box_id, frame, original_frame)
 
     def collectStats(self) -> None:
         # Write the vehicle counting information in a file and save it
@@ -181,36 +249,16 @@ class CameraInstance:
         # check if video ran out of frame
         if not success:
             return success, False
-        # resize frame
+        # resize frame to reduce unnecessary load on gpu
         scaled_frame = cv2.resize(frame, (0, 0), None, 0.5, 0.5)
-        # read traffic light
-        traffic_light_status = self.__readTrafficLight(scaled_frame)
+        # read current traffic light
+        self.__readTrafficLight(scaled_frame)
 
-        if traffic_light_status:
-            scaled_original_frame = scaled_frame.copy()
-            cropped_detection_frame = scaled_frame[DETECTION_OFFSET_Y:DETECTION_MAX_Y,
-                                            DETECTION_OFFSET_X:DETECTION_MAX_X]
-            ih, iw, channels = cropped_detection_frame.shape
-            blob = cv2.dnn.blobFromImage(
-                cropped_detection_frame, 1 / 255, (input_size, input_size), [0, 0, 0], 1, crop=False)
-
-            # Set the input of the network
-            net.setInput(blob)
-            layersNames = net.getLayerNames()
-            # outputNames = [(layersNames[i[0] - 1]) for i in net.getUnconnectedOutLayers()]
-            try:
-                # reason for type checking https://github.com/opencv/opencv/issues/20923
-                type_comparison_placeholder = np.zeros(1)
-                outputNames = [(layersNames[(i if type(i) is not type(type_comparison_placeholder) else i[0]) - 1])
-                               for i in net.getUnconnectedOutLayers()]
-                # Feed data to the network
-                outputs = net.forward(outputNames)
-                # Find the objects from the network output
-                self.__postProcess(outputs, cropped_detection_frame,
-                                   scaled_frame, scaled_original_frame)
-            except TypeError as e:
-                capture_exception(e)
-                return success, traffic_light_status
+        if self.current_traffic_light is TrafficLightColor.RED:
+            self.__process(net, scaled_frame)
+        elif self.current_traffic_light is TrafficLightColor.YELLOW:
+            self.__process(net, scaled_frame)
+            self.evidence_frames.append(frame)
 
         # Draw the crossing lines
         cv2.line(scaled_frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),
@@ -231,4 +279,4 @@ class CameraInstance:
         # Show the frames
         cv2.imshow(f'{self.name} output', scaled_frame)
 
-        return success, traffic_light_status
+        return success, self.current_traffic_light
