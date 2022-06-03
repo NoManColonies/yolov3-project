@@ -29,6 +29,8 @@ class CameraInstance:
         # Camera frames for rendering into a video evidences
         self.__evidence_frames = []
         self.__evidence_trackers = []
+        # camera reconnect attempt
+        self.__reconnect_retry_attempt = 0
 
     def __del__(self):
         self.flush()
@@ -294,21 +296,28 @@ class CameraInstance:
         success, frame = self.cap.read()
         # check if video ran out of frame
         if not success:
-            return success, None
+            if self.__reconnect_retry_attempt <= 9:
+                self.cap.release()
+                print("camera disconnected. retrying...")
+                self.__connectToCamera()
+                self.__reconnect_retry_attempt = self.__reconnect_retry_attempt + 3
+                return True, None
+            else:
+                return False, None
+        elif self.__reconnect_retry_attempt > 0:
+            self.__reconnect_retry_attempt = self.__reconnect_retry_attempt - 1
         # resize frame to reduce unnecessary load on gpu
         scaled_frame = cv2.resize(frame, (0, 0), None, 0.5, 0.5)
         # read current traffic light
         self.__readTrafficLight(scaled_frame)
 
-        if not is_active_camera:
-            return success, self.current_traffic_light
-
-        if self.current_traffic_light is TrafficLightColor.RED:
-            self.__evidence_frames.append(frame)
-            self.__process(net, scaled_frame)
-        elif self.current_traffic_light is TrafficLightColor.YELLOW:
-            self.__evidence_frames.append(frame)
-            self.__process(net, scaled_frame)
+        if is_active_camera:
+            if self.current_traffic_light is TrafficLightColor.RED:
+                self.__evidence_frames.append(frame)
+                self.__process(net, scaled_frame)
+            elif self.current_traffic_light is TrafficLightColor.YELLOW:
+                self.__evidence_frames.append(frame)
+                self.__process(net, scaled_frame)
 
         # Draw the crossing lines
         cv2.line(scaled_frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),

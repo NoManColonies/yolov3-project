@@ -304,6 +304,8 @@ def main():
 
         if not success or cv2.waitKey(1) == ord('q'):
             break
+    for camera in cameras:
+        camera.flush()
     # Finally realese the capture object and destroy all active windows
     cv2.destroyAllWindows()
 
