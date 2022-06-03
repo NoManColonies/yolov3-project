@@ -295,13 +295,16 @@ def main():
                 is_active_camera=camera_index is active_camera_index
             )
             # set this camera to active camera if traffic light turn green
+            # print(traffic_light_status)
             if traffic_light_status is TrafficLightColor.OTHER:
-                # flush the state of last camera if there is a last camera
-                if active_camera_index != -1:
-                    cameras[active_camera_index].flush()
+                # # flush the state of last camera if there is a last camera
+                # if active_camera_index != -1 and active_camera_index != camera_index:
+                #     print(f"executing flush command on camera: {camera_index}")
+                #     cameras[active_camera_index].flush()
                 # set current active camera to this camera
-                print(f"setting active camera to index: {active_camera_index}")
-                active_camera_index = camera_index
+                if active_camera_index != camera_index:
+                    print(f"setting active camera to index: {camera_index}")
+                    active_camera_index = camera_index
 
         if not success or cv2.waitKey(1) == ord('q'):
             break

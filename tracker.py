@@ -10,6 +10,8 @@ class EuclideanDistTracker:
         # each time a new object id detected, the count will increase by one
         self.id_count = 0
 
+    def __del__(self):
+        print('deleting tracker...')
 
     def update(self, objects_rect):
         # Objects boxes and ids
