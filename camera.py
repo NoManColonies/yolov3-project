@@ -26,6 +26,7 @@ class CameraInstance:
         self.up_list = [0, 0, 0]
         # Current traffic light color
         self.current_traffic_light = TrafficLightColor.OTHER
+        self.previous_traffic_light = TrafficLightColor.OTHER
         # Camera frames for rendering into a video evidences
         self.__evidence_frames = []
         self.__evidence_trackers = []
@@ -33,6 +34,7 @@ class CameraInstance:
         self.__reconnect_retry_attempt = 0
 
     def __del__(self):
+        self.cap.release()
         self.flush()
 
     def __connectToCamera(self) -> None:
@@ -69,6 +71,7 @@ class CameraInstance:
             # cv2.imshow('Red Light', np.hstack([blank, traffic_light_mask]))
 
         if positive_red_light_count / total_red_light_count >= required_red_light_count_ratio:
+            self.previous_traffic_light = self.current_traffic_light
             self.current_traffic_light = TrafficLightColor.RED
             return
         # yellow light section
@@ -90,11 +93,13 @@ class CameraInstance:
             # cv2.imshow('Yellow Light', np.hstack([blank, traffic_light_mask]))
 
         if positive_yellow_light_count / total_yellow_light_count >= required_yellow_light_count_ratio:
+            self.previous_traffic_light = self.current_traffic_light
             self.current_traffic_light = TrafficLightColor.YELLOW
             return
         # allow for delay between light switching from yellow to red color
         if self.current_traffic_light is TrafficLightColor.YELLOW:
             return
+        self.previous_traffic_light = self.current_traffic_light
         self.current_traffic_light = TrafficLightColor.OTHER
 
     # Function for finding the center of a rectangle
@@ -229,11 +234,11 @@ class CameraInstance:
         for x, y, w, h, id, _ in boxes_ids:
             for index, tracker in enumerate(self.__evidence_trackers):
                 if tracker.id is id:
-                    print('found id')
+                    # print('found id')
                     self.__evidence_trackers[index].append_position(
                         (len(self.__evidence_frames) - 1, x, y, w, h))
             else:
-                print('adding new id')
+                # print('adding new id')
                 evidence_tracker = EvidenceTracker(
                     len(self.__evidence_frames) - 1, id)
                 evidence_tracker.append_position(
@@ -259,8 +264,9 @@ class CameraInstance:
     def flush(self):
         print("flushing camera state")
         self.collectStats()
-        self.cap.release()
         # Encode evidence frame into a video file
+        print(f"total evidence trackers in this round: {len(self.__evidence_trackers)}")
+        print(f"total evidence frames in this round: {len(self.__evidence_frames)}")
         for tracker in self.__evidence_trackers:
             tracker.compose_evidence(self.__evidence_frames.copy())
         # reset camera detection states
@@ -308,9 +314,15 @@ class CameraInstance:
         elif self.__reconnect_retry_attempt > 0:
             self.__reconnect_retry_attempt = self.__reconnect_retry_attempt - 1
         # resize frame to reduce unnecessary load on gpu
-        scaled_frame = cv2.resize(frame, (0, 0), None, 0.5, 0.5)
+        scaled_frame = cv2.resize(frame.copy(), (0, 0), None, 0.5, 0.5)
         # read current traffic light
         self.__readTrafficLight(scaled_frame)
+        # if last color is RED and current is OTHER then flush the camera state
+        if self.current_traffic_light is not self.previous_traffic_light:
+            print(f"current: {self.current_traffic_light}\nprevious: {self.previous_traffic_light}")
+        if self.current_traffic_light is TrafficLightColor.OTHER and self.previous_traffic_light is TrafficLightColor.RED:
+            print("entering next traffic phrase")
+            self.flush()
 
         if is_active_camera:
             if self.current_traffic_light is TrafficLightColor.RED:
