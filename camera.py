@@ -291,7 +291,7 @@ class CameraInstance:
         font_size=0.5,
         font_thickness=2,
         is_active_camera=False
-    ) -> (bool, TrafficLightColor):
+    ) -> (bool, TrafficLightColor, bool):
         DETECTION_OFFSET_Y = self.detection['offset_y']
         DETECTION_OFFSET_X = self.detection['offset_x']
         DETECTION_MAX_Y = self.detection['max_y']
@@ -308,9 +308,9 @@ class CameraInstance:
                 print("camera disconnected. retrying...")
                 self.__connectToCamera()
                 self.__reconnect_retry_attempt = self.__reconnect_retry_attempt + 3
-                return True, None
+                return True, None, False
             else:
-                return False, None
+                return False, None, False
         elif self.__reconnect_retry_attempt > 0:
             self.__reconnect_retry_attempt = self.__reconnect_retry_attempt - 1
         # resize frame to reduce unnecessary load on gpu
@@ -323,6 +323,7 @@ class CameraInstance:
         if self.current_traffic_light is TrafficLightColor.OTHER and self.previous_traffic_light is TrafficLightColor.RED:
             print("entering next traffic phrase")
             self.flush()
+            return success, self.current_traffic_light, True
 
         if is_active_camera:
             if self.current_traffic_light is TrafficLightColor.RED:
@@ -351,4 +352,4 @@ class CameraInstance:
         # Show the frames
         cv2.imshow(f'{self.name} output', scaled_frame)
 
-        return success, self.current_traffic_light
+        return success, self.current_traffic_light, False

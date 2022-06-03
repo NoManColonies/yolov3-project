@@ -12,6 +12,7 @@ from camera import *
 import sentry_sdk
 from os import getenv
 from dotenv import load_dotenv
+import time
 # load .env file
 load_dotenv()
 # config sentry sdk
@@ -281,6 +282,7 @@ def realTime():
 def main():
     cameras = []
     active_camera_index = -1
+    start_time = time.time()
 
     for camera in configurations['cameras']:
         name, path, detection_box, traffic_lights = camera.items()
@@ -290,12 +292,14 @@ def main():
     while True:
         global success
         for camera_index, camera in enumerate(cameras):
-            success, traffic_light_status = camera.render(
+            success, traffic_light_status, phrase_state = camera.render(
                 net,
                 is_active_camera=camera_index is active_camera_index
             )
+            if len(cameras) == 1 and phrase_state:
+                print("starting phrase trigger timer...")
+                start_time = time.time()
             # set this camera to active camera if traffic light turn green
-            # print(traffic_light_status)
             if traffic_light_status is TrafficLightColor.OTHER:
                 # # flush the state of last camera if there is a last camera
                 # if active_camera_index != -1 and active_camera_index != camera_index:
@@ -305,6 +309,13 @@ def main():
                 if active_camera_index != camera_index:
                     print(f"setting active camera to index: {camera_index}")
                     active_camera_index = camera_index
+            elif traffic_light_status is TrafficLightColor.RED:
+                # deactivate camera after 5 seconds if this is the only camera
+                if len(cameras) == 1 and round((time.time() - start_time), 2) > 5 and active_camera_index != -1:
+                    print(f"deactivating camera: {active_camera_index}")
+                    active_camera_index = -1
+
+
 
         if not success or cv2.waitKey(1) == ord('q'):
             break
