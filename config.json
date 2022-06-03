@@ -1,0 +1,49 @@
+{
+  "cameras": [
+    {
+      "name": "10_42_0_2_cam",
+      "path": "10.42.0.2_cam_3.mkv",
+      "detection_box": {
+        "offset_y": 150,
+        "offset_x": 60,
+        "max_y": 530,
+        "max_x": 950,
+        "line_position_y": 180
+      },
+      "traffic_lights": {
+        "red": [
+          {
+            "position_x": 672,
+            "position_y": 32,
+            "width": 5,
+            "height": 5
+          },
+          {
+            "position_x": 680,
+            "position_y": 32,
+            "width": 5,
+            "height": 5
+          }
+        ],
+        "yellow": [
+          {
+            "position_x": 672,
+            "position_y": 40,
+            "width": 5,
+            "height": 5
+          },
+          {
+            "position_x": 680,
+            "position_y": 40,
+            "width": 5,
+            "height": 5
+          }
+        ]
+      }
+    }
+  ],
+  "traffic_light_color_boundries": {
+    "low": [0, 19, 150],
+    "high": [214, 204, 255]
+  }
+}
