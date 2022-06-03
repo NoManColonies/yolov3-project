@@ -257,6 +257,7 @@ class CameraInstance:
         self.__evidence_trackers = []
 
     def flush(self):
+        print("flushing camera state")
         self.collectStats()
         self.cap.release()
         # Encode evidence frame into a video file

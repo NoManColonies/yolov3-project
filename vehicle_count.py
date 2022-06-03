@@ -300,6 +300,7 @@ def main():
                 if active_camera_index != -1:
                     cameras[active_camera_index].flush()
                 # set current active camera to this camera
+                print(f"setting active camera to index: {active_camera_index}")
                 active_camera_index = camera_index
 
         if not success or cv2.waitKey(1) == ord('q'):
