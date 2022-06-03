@@ -4,6 +4,7 @@ import csv
 from tracker import *
 from sentry_sdk import capture_exception
 from traffic_light import TrafficLightColor
+from evidence_tracker import EvidenceTracker
 
 
 class CameraInstance:
@@ -27,11 +28,10 @@ class CameraInstance:
         self.current_traffic_light = TrafficLightColor.OTHER
         # Camera frames for rendering into a video evidences
         self.__evidence_frames = []
-        self.__evidence_tracker = []
+        self.__evidence_trackers = []
 
     def __del__(self):
-        self.collectStats()
-        self.cap.release()
+        self.flush()
 
     def __connectToCamera(self) -> None:
         # Initialize the videocapture object
@@ -64,7 +64,7 @@ class CameraInstance:
 
             if not np.array_equal(blank, traffic_light_mask):
                 positive_red_light_count = positive_red_light_count + 1
-            cv2.imshow('Red Light', np.hstack([blank, traffic_light_mask]))
+            # cv2.imshow('Red Light', np.hstack([blank, traffic_light_mask]))
 
         if positive_red_light_count / total_red_light_count >= required_red_light_count_ratio:
             self.current_traffic_light = TrafficLightColor.RED
@@ -85,7 +85,7 @@ class CameraInstance:
 
             if not np.array_equal(blank, traffic_light_mask):
                 positive_yellow_light_count = positive_yellow_light_count + 1
-            cv2.imshow('Yellow Light', np.hstack([blank, traffic_light_mask]))
+            # cv2.imshow('Yellow Light', np.hstack([blank, traffic_light_mask]))
 
         if positive_yellow_light_count / total_yellow_light_count >= required_yellow_light_count_ratio:
             self.current_traffic_light = TrafficLightColor.YELLOW
@@ -128,7 +128,11 @@ class CameraInstance:
                 self.up_list[index] = self.up_list[index]+1
                 cv2.rectangle(copied_original_frame, (x, y),
                               (x + w, y + h), (0, 0, 255), 2)
-                self.__processDetectedFrame(copied_original_frame, id)
+                # self.__processDetectedFrame(copied_original_frame, id)
+                for _, tracker in enumerate(self.__evidence_trackers):
+                    if tracker.id is id:
+                        tracker.mark_evidence_positive(copied_original_frame)
+                        break
 
         # Draw circle in the middle of the rectangle
         cv2.circle(frame, center, 2, (0, 0, 255), -1)
@@ -218,11 +222,46 @@ class CameraInstance:
 
         # Update the tracker for each object
         boxes_ids = self.tracker.update(detection)
-
+        # Collect evidences
+        # self.__evidence_frames.append(original_frame)
+        for x, y, w, h, id, _ in boxes_ids:
+            for index, tracker in enumerate(self.__evidence_trackers):
+                if tracker.id is id:
+                    print('found id')
+                    self.__evidence_trackers[index].append_position(
+                        (len(self.__evidence_frames) - 1, x, y, w, h))
+            else:
+                print('adding new id')
+                evidence_tracker = EvidenceTracker(
+                    len(self.__evidence_frames) - 1, id)
+                evidence_tracker.append_position(
+                    (len(self.__evidence_frames) - 1, x, y, w, h))
+                self.__evidence_trackers.append(evidence_tracker)
+        # Count vehicles
         if self.current_traffic_light is TrafficLightColor.RED:
             for box_id in boxes_ids:
                 self.__countVehicle(
                     box_id, frame, original_frame)
+
+    def __resetState(self):
+        self.detected_classNames = []
+        # Initialize Tracker
+        self.tracker = EuclideanDistTracker()
+        # List for store vehicle count information
+        self.temp_down_list = []
+        self.up_list = [0, 0, 0]
+        # Camera frames for rendering into a video evidences
+        self.__evidence_frames = []
+        self.__evidence_trackers = []
+
+    def flush(self):
+        self.collectStats()
+        self.cap.release()
+        # Encode evidence frame into a video file
+        for tracker in self.__evidence_trackers:
+            tracker.compose_evidence(self.__evidence_frames.copy())
+        # reset camera detection states
+        self.__resetState()
 
     def collectStats(self) -> None:
         # Write the vehicle counting information in a file and save it
@@ -235,8 +274,15 @@ class CameraInstance:
         self.up_list = [0, 0, 0]
         self.temp_down_list = []
 
-    def render(self, net, input_size=320, font_color=(0, 0, 255), font_size=0.5, font_thickness=2
-               ) -> (bool, bool):
+    def render(
+        self,
+        net,
+        input_size=320,
+        font_color=(0, 0, 255),
+        font_size=0.5,
+        font_thickness=2,
+        is_active_camera=False
+    ) -> (bool, TrafficLightColor):
         DETECTION_OFFSET_Y = self.detection['offset_y']
         DETECTION_OFFSET_X = self.detection['offset_x']
         DETECTION_MAX_Y = self.detection['max_y']
@@ -248,17 +294,21 @@ class CameraInstance:
         success, frame = self.cap.read()
         # check if video ran out of frame
         if not success:
-            return success, False
+            return success, None
         # resize frame to reduce unnecessary load on gpu
         scaled_frame = cv2.resize(frame, (0, 0), None, 0.5, 0.5)
         # read current traffic light
         self.__readTrafficLight(scaled_frame)
 
+        if not is_active_camera:
+            return success, self.current_traffic_light
+
         if self.current_traffic_light is TrafficLightColor.RED:
+            self.__evidence_frames.append(frame)
             self.__process(net, scaled_frame)
         elif self.current_traffic_light is TrafficLightColor.YELLOW:
+            self.__evidence_frames.append(frame)
             self.__process(net, scaled_frame)
-            self.evidence_frames.append(frame)
 
         # Draw the crossing lines
         cv2.line(scaled_frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),

@@ -280,6 +280,7 @@ def realTime():
 
 def main():
     cameras = []
+    active_camera_index = -1
 
     for camera in configurations['cameras']:
         name, path, detection_box, traffic_lights = camera.items()
@@ -288,8 +289,18 @@ def main():
 
     while True:
         global success
-        for camera in cameras:
-            success, traffic_light_status = camera.render(net)
+        for camera_index, camera in enumerate(cameras):
+            success, traffic_light_status = camera.render(
+                net,
+                is_active_camera=camera_index is active_camera_index
+            )
+            # set this camera to active camera if traffic light turn green
+            if traffic_light_status is TrafficLightColor.OTHER:
+                # flush the state of last camera if there is a last camera
+                if active_camera_index != -1:
+                    cameras[active_camera_index].flush()
+                # set current active camera to this camera
+                active_camera_index = camera_index
 
         if not success or cv2.waitKey(1) == ord('q'):
             break
