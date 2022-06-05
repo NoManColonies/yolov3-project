@@ -4,12 +4,6 @@ import uuid
 import requests
 from evidence_tracker import EvidenceTracker
 from processible_evidence import ProcessibleEvidence
-from jwt import (
-    JWT,
-    jwk_from_pem,
-)
-from jwt.utils import get_int_from_datetime
-from datetime import datetime, timedelta, timezone
 from os import getenv
 
 
@@ -44,7 +38,8 @@ class EvidenceProcessor(threading.Thread):
                 'vid': video_upload_response['result']['uid'],
                 'vdata': str(id) + ',' + image_upload_response['result']['id']
             }
-            requests.post('https://royaltraffic.katsu-r-alias.workers.dev/api/queue', json=message, headers=self.headers)
+            requests.post('https://royaltraffic.katsu-r-alias.workers.dev/api/queue',
+                          json=message, headers=self.headers)
             print(f"begin upload evidence id: {id} ... [done]")
 
     def run(self):
