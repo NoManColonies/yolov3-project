@@ -2,7 +2,7 @@
   "cameras": [
     {
       "name": "10_42_0_2_cam",
-      "path": "10.42.0.2_cam_3.mkv",
+      "path": "10.42.0.2_cam.mkv",
       "detection_box": {
         "offset_y": 150,
         "offset_x": 60,

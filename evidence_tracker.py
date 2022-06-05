@@ -18,7 +18,7 @@ class EvidenceTracker:
         self.__positive = True
         self.__evidence_frame = frame
 
-    def compose_evidence(self, frames) -> None:
+    def compose_evidence(self, frames) -> str:
         if self.__positive:
             cv2.imwrite(f'result/{self.uuid}.png', self.__evidence_frame)
             print(f'Composing video evidence id: {self.uuid}')
@@ -32,3 +32,5 @@ class EvidenceTracker:
                               ((x + w) * 2, (y + h) * 2), (0, 0, 255), 2)
                 out.write(frames[frame_index])
             out.release()
+            return self.uuid
+        return None

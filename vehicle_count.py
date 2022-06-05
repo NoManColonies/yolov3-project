@@ -13,6 +13,8 @@ import sentry_sdk
 from os import getenv
 from dotenv import load_dotenv
 import time
+from queue import PriorityQueue
+from evidence_processor import EvidenceProcessor
 # load .env file
 load_dotenv()
 # config sentry sdk
@@ -81,6 +83,9 @@ net.setPreferableTarget(cv2.dnn.DNN_TARGET_CUDA)
 # Define random colour for each class
 np.random.seed(42)
 colors = np.random.randint(0, 255, size=(len(classNames), 3), dtype='uint8')
+
+# work queue
+queue = PriorityQueue(10)
 
 
 # Function for finding the center of a rectangle
@@ -281,46 +286,32 @@ def realTime():
 
 def main():
     cameras = []
-    active_camera_index = -1
-    start_time = time.time()
 
     for camera in configurations['cameras']:
         name, path, detection_box, traffic_lights = camera.items()
-        cameras.append(CameraInstance(name[1], path[1], detection_box[1],
-                       traffic_lights[1], configurations['traffic_light_color_boundries'], classNames, colors))
+        camera = CameraInstance(name[1], path[1], detection_box[1],
+                                traffic_lights[1], configurations['traffic_light_color_boundries'], classNames, colors, queue=queue)
+        cameras.append(camera)
 
-    while True:
-        global success
-        for camera_index, camera in enumerate(cameras):
-            success, traffic_light_status, phrase_state = camera.render(
-                net,
-                is_active_camera=camera_index is active_camera_index
-            )
-            if len(cameras) == 1 and phrase_state:
-                print("starting phrase trigger timer...")
-                start_time = time.time()
-            # set this camera to active camera if traffic light turn green
-            if traffic_light_status is TrafficLightColor.OTHER:
-                # # flush the state of last camera if there is a last camera
-                # if active_camera_index != -1 and active_camera_index != camera_index:
-                #     print(f"executing flush command on camera: {camera_index}")
-                #     cameras[active_camera_index].flush()
-                # set current active camera to this camera
-                if active_camera_index != camera_index:
-                    print(f"setting active camera to index: {camera_index}")
-                    active_camera_index = camera_index
-            elif traffic_light_status is TrafficLightColor.RED:
-                # deactivate camera after 5 seconds if this is the only camera
-                if len(cameras) == 1 and round((time.time() - start_time), 2) > 5 and active_camera_index != -1:
-                    print(f"deactivating camera: {active_camera_index}")
-                    active_camera_index = -1
+    processor = EvidenceProcessor(queue)
+    processor.start()
 
+    try:
+        while True:
+            global success
+            for camera_index, camera in enumerate(cameras):
+                success = camera.render(net)
 
+            if not success or cv2.waitKey(1) == ord('q'):
+                print("success is False. quiting...")
+                break
+    except BaseException as e:
+        sentry_sdk.capture_exception(e)
 
-        if not success or cv2.waitKey(1) == ord('q'):
-            break
     for camera in cameras:
         camera.flush()
+
+    queue.join()
     # Finally realese the capture object and destroy all active windows
     cv2.destroyAllWindows()
 

@@ -5,10 +5,13 @@ from tracker import *
 from sentry_sdk import capture_exception
 from traffic_light import TrafficLightColor
 from evidence_tracker import EvidenceTracker
+from processible_evidence import ProcessibleEvidence
+import queue
+import time
 
 
 class CameraInstance:
-    def __init__(self, name, path, detection, traffic_lights, boundries, classNames, colors):
+    def __init__(self, name, path, detection, traffic_lights, boundries, classNames, colors, queue: queue.PriorityQueue):
         self.name = name
         self.path = path
         self.detection = detection
@@ -27,11 +30,18 @@ class CameraInstance:
         # Current traffic light color
         self.current_traffic_light = TrafficLightColor.OTHER
         self.previous_traffic_light = TrafficLightColor.OTHER
+        self.is_active_camera = False
+        self.is_tracking_red_light = False
+        self.is_tracking_red_light_waiting_for_reset = False
+        self.red_light_tracking_time = time.time()
         # Camera frames for rendering into a video evidences
         self.__evidence_frames = []
         self.__evidence_trackers = []
+        self.is_awaiting_flush_command = False
         # camera reconnect attempt
         self.__reconnect_retry_attempt = 0
+        # work queue
+        self.queue = queue
 
     def __del__(self):
         self.cap.release()
@@ -73,6 +83,17 @@ class CameraInstance:
         if positive_red_light_count / total_red_light_count >= required_red_light_count_ratio:
             self.previous_traffic_light = self.current_traffic_light
             self.current_traffic_light = TrafficLightColor.RED
+            if not self.is_tracking_red_light and not self.is_tracking_red_light_waiting_for_reset:
+                print("begin tracking red light...")
+                self.is_tracking_red_light = True
+                self.red_light_tracking_time = time.time()
+            elif round((time.time() - self.red_light_tracking_time), 2) > 5 and not self.is_tracking_red_light_waiting_for_reset:
+                print("stop tracking red light. waiting for reset...")
+                self.is_tracking_red_light = False
+                self.is_tracking_red_light_waiting_for_reset = True
+                print(f"deactivating {self.name} camera...")
+                self.is_active_camera = False
+                self.is_awaiting_flush_command = True
             return
         # yellow light section
         total_yellow_light_count = len(yellow_lights[1])
@@ -99,8 +120,20 @@ class CameraInstance:
         # allow for delay between light switching from yellow to red color
         if self.current_traffic_light is TrafficLightColor.YELLOW:
             return
+        # abort if red light is currently tracked
+        if self.is_tracking_red_light:
+            return
         self.previous_traffic_light = self.current_traffic_light
         self.current_traffic_light = TrafficLightColor.OTHER
+
+        if self.is_tracking_red_light_waiting_for_reset:
+            # reset red light tracking
+            print("resetting red light tracker...")
+            self.is_tracking_red_light_waiting_for_reset = False
+        # activate camera if not yet
+        if not self.is_active_camera:
+            print(f"activating {self.name} camera...")
+            self.is_active_camera = True
 
     # Function for finding the center of a rectangle
     def __findCenter(self, x, y, w, h) -> (int, int):
@@ -261,37 +294,14 @@ class CameraInstance:
         self.__evidence_frames = []
         self.__evidence_trackers = []
 
-    def flush(self):
-        print("flushing camera state")
-        self.collectStats()
-        # Encode evidence frame into a video file
-        print(f"total evidence trackers in this round: {len(self.__evidence_trackers)}")
-        print(f"total evidence frames in this round: {len(self.__evidence_frames)}")
-        for tracker in self.__evidence_trackers:
-            tracker.compose_evidence(self.__evidence_frames.copy())
-        # reset camera detection states
-        self.__resetState()
-
-    def collectStats(self) -> None:
-        # Write the vehicle counting information in a file and save it
-        with open(f"{self.name}_data.csv", 'w') as f1:
-            cwriter = csv.writer(f1)
-            cwriter.writerow(['Direction', 'car', 'bus', 'truck'])
-            self.up_list.insert(0, "Passed")
-            cwriter.writerow(self.up_list)
-        f1.close()
-        self.up_list = [0, 0, 0]
-        self.temp_down_list = []
-
-    def render(
+    def __draw_debug_output(
         self,
-        net,
+        scaled_frame,
         input_size=320,
         font_color=(0, 0, 255),
         font_size=0.5,
         font_thickness=2,
-        is_active_camera=False
-    ) -> (bool, TrafficLightColor, bool):
+    ):
         DETECTION_OFFSET_Y = self.detection['offset_y']
         DETECTION_OFFSET_X = self.detection['offset_x']
         DETECTION_MAX_Y = self.detection['max_y']
@@ -299,40 +309,6 @@ class CameraInstance:
         MIDDLE_LINE_POSITION = self.detection['line_position_y']
         TOP_LINE_POSITION = self.detection['line_position_y'] - 10
         BOTTOM_LINE_POSITION = self.detection['line_position_y'] + 10
-
-        success, frame = self.cap.read()
-        # check if video ran out of frame
-        if not success:
-            if self.__reconnect_retry_attempt <= 9:
-                self.cap.release()
-                print("camera disconnected. retrying...")
-                self.__connectToCamera()
-                self.__reconnect_retry_attempt = self.__reconnect_retry_attempt + 3
-                return True, None, False
-            else:
-                return False, None, False
-        elif self.__reconnect_retry_attempt > 0:
-            self.__reconnect_retry_attempt = self.__reconnect_retry_attempt - 1
-        # resize frame to reduce unnecessary load on gpu
-        scaled_frame = cv2.resize(frame.copy(), (0, 0), None, 0.5, 0.5)
-        # read current traffic light
-        self.__readTrafficLight(scaled_frame)
-        # if last color is RED and current is OTHER then flush the camera state
-        if self.current_traffic_light is not self.previous_traffic_light:
-            print(f"current: {self.current_traffic_light}\nprevious: {self.previous_traffic_light}")
-        if self.current_traffic_light is TrafficLightColor.OTHER and self.previous_traffic_light is TrafficLightColor.RED:
-            print("entering next traffic phrase")
-            self.flush()
-            return success, self.current_traffic_light, True
-
-        if is_active_camera:
-            if self.current_traffic_light is TrafficLightColor.RED:
-                self.__evidence_frames.append(frame)
-                self.__process(net, scaled_frame)
-            elif self.current_traffic_light is TrafficLightColor.YELLOW:
-                self.__evidence_frames.append(frame)
-                self.__process(net, scaled_frame)
-
         # Draw the crossing lines
         cv2.line(scaled_frame, (DETECTION_OFFSET_X, MIDDLE_LINE_POSITION),
                  (DETECTION_MAX_X, MIDDLE_LINE_POSITION), (255, 0, 255), 2)
@@ -352,4 +328,73 @@ class CameraInstance:
         # Show the frames
         cv2.imshow(f'{self.name} output', scaled_frame)
 
-        return success, self.current_traffic_light, False
+    def flush(self):
+        print("flushing camera state")
+        self.collectStats()
+        # Encode evidence frame into a video file
+        print(
+            f"total evidence trackers in this round: {len(self.__evidence_trackers)}")
+        print(
+            f"total evidence frames in this round: {len(self.__evidence_frames)}")
+        evidences = ProcessibleEvidence(
+            self.__evidence_trackers, self.__evidence_frames)
+        self.queue.put_nowait(evidences)
+        # for tracker in self.__evidence_trackers:
+        #     tracker.compose_evidence(self.__evidence_frames.copy())
+        # reset camera detection states
+        self.__resetState()
+
+    def collectStats(self) -> None:
+        # Write the vehicle counting information in a file and save it
+        with open(f"{self.name}_data.csv", 'w') as f1:
+            cwriter = csv.writer(f1)
+            cwriter.writerow(['Direction', 'car', 'bus', 'truck'])
+            self.up_list.insert(0, "Passed")
+            cwriter.writerow(self.up_list)
+        f1.close()
+        self.up_list = [0, 0, 0]
+        self.temp_down_list = []
+
+    def render(
+        self,
+        net,
+    ) -> bool:
+
+        success, frame = self.cap.read()
+        # check if video ran out of frame
+        if not success:
+            if self.__reconnect_retry_attempt <= 9:
+                self.cap.release()
+                print("camera disconnected. retrying...")
+                self.__connectToCamera()
+                self.__reconnect_retry_attempt = self.__reconnect_retry_attempt + 3
+                return True
+            else:
+                return False
+        elif self.__reconnect_retry_attempt > 0:
+            self.__reconnect_retry_attempt = self.__reconnect_retry_attempt - 1
+        # resize frame to reduce unnecessary load on gpu
+        scaled_frame = cv2.resize(frame.copy(), (0, 0), None, 0.5, 0.5)
+        # read current traffic light
+        self.__readTrafficLight(scaled_frame)
+        # if last color is RED and current is OTHER then flush the camera state
+        if self.current_traffic_light is not self.previous_traffic_light:
+            print(
+                f"current: {self.current_traffic_light}\nprevious: {self.previous_traffic_light}")
+        if self.is_awaiting_flush_command:
+            print("entering next traffic phrase")
+            self.flush()
+            self.is_awaiting_flush_command = False
+            return success
+
+        if self.is_active_camera:
+            if self.current_traffic_light is TrafficLightColor.RED:
+                self.__evidence_frames.append(frame)
+                self.__process(net, scaled_frame)
+            elif self.current_traffic_light is TrafficLightColor.YELLOW:
+                self.__evidence_frames.append(frame)
+                self.__process(net, scaled_frame)
+        
+        self.__draw_debug_output(scaled_frame)
+
+        return success
