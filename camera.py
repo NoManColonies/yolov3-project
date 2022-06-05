@@ -395,6 +395,6 @@ class CameraInstance:
                 self.__evidence_frames.append(frame)
                 self.__process(net, scaled_frame)
         
-        self.__draw_debug_output(scaled_frame)
+        # self.__draw_debug_output(scaled_frame)
 
         return success
