@@ -16,7 +16,9 @@ class CameraInstance:
         self.path = path
         self.detection = detection
         self.traffic_lights = traffic_lights
-        self.traffic_light_boundries = boundries
+        self.traffic_light_boundries_red = boundries["red"]
+        self.traffic_light_boundries_yellow = boundries["yellow"]
+        self.traffic_light_boundries_white = boundries["white"]
         self.detected_classNames = []
         self.classNames = classNames
         self.colors = colors
@@ -51,34 +53,68 @@ class CameraInstance:
         # Initialize the videocapture object
         self.cap = cv2.VideoCapture(self.path)
 
+    def __analyzeTrafficLight(self, frame) -> float:
+        count = 0
+        total = 0
+        height, width = frame.shape[:2]
+        blank = np.zeros((1, 1, 3), dtype='uint8')
+        for y in range(0, height):
+            for x in range(0, width):
+                if not np.array_equal(blank, frame[y:y + 1, x:x + 1]):
+                    count = count + 1
+                total = total + 1
+        return count / total
+
     def __readTrafficLight(self, frame) -> None:
         # create NumPy arrays from the boundaries
-        lower = np.array(self.traffic_light_boundries['low'], dtype="uint8")
-        upper = np.array(self.traffic_light_boundries['high'], dtype="uint8")
+        red_lower = np.array(
+            self.traffic_light_boundries_red['low'], dtype="uint8")
+        red_upper = np.array(
+            self.traffic_light_boundries_red['high'], dtype="uint8")
+        yellow_lower = np.array(
+            self.traffic_light_boundries_yellow['low'], dtype="uint8")
+        yellow_upper = np.array(
+            self.traffic_light_boundries_yellow['high'], dtype="uint8")
+        white_lower = np.array(
+            self.traffic_light_boundries_white['low'], dtype="uint8")
+        white_upper = np.array(
+            self.traffic_light_boundries_white['high'], dtype="uint8")
         # find the colors within the specified boundaries and apply
         # the mask
-        mask = cv2.inRange(frame, lower, upper)
-        output = cv2.bitwise_and(frame, frame, mask=mask)
+        red_mask = cv2.inRange(frame, red_lower, red_upper)
+        red_output = cv2.bitwise_and(frame, frame, mask=red_mask)
+        yellow_mask = cv2.inRange(frame, yellow_lower, yellow_upper)
+        yellow_output = cv2.bitwise_and(frame, frame, mask=yellow_mask)
+        white_mask = cv2.inRange(frame, white_lower, white_upper)
+        white_output = cv2.bitwise_and(frame, frame, mask=white_mask)
         # read traffic light colors from configuration
         red_lights, yellow_lights = self.traffic_lights.items()
 
         # red light section
         total_red_light_count = len(red_lights[1])
         positive_red_light_count = 0
-        required_red_light_count_ratio = 1/2
+        required_red_light_count_ratio = 2/3
+        required_pixel_count_ratio = 0.1
 
-        for red_traffic_light in red_lights[1]:
+        for index, red_traffic_light in enumerate(red_lights[1]):
             position_x, position_y, width, height = red_traffic_light.items()
             # create blank image for comparison
-            blank = np.zeros((width[1], height[1], 3), dtype='uint8')
-            traffic_light_mask = output[position_y[1]:
-                                        (height[1] + position_y[1]),
-                                        position_x[1]:
-                                        (width[1] + position_x[1])]
+            # blank = np.zeros((width[1], height[1], 3), dtype='uint8')
+            traffic_light_mask_red = red_output[position_y[1]:
+                                                (height[1] + position_y[1]),
+                                                position_x[1]:
+                                                (width[1] + position_x[1])]
+            traffic_light_mask_white = white_output[position_y[1]:
+                                                    (height[1] +
+                                                     position_y[1]),
+                                                    position_x[1]:
+                                                    (width[1] + position_x[1])]
 
-            if not np.array_equal(blank, traffic_light_mask):
+            # if not np.array_equal(blank, traffic_light_mask):
+            #     positive_red_light_count = positive_red_light_count + 1
+            if self.__analyzeTrafficLight(traffic_light_mask_red) >= required_pixel_count_ratio or self.__analyzeTrafficLight(traffic_light_mask_white) >= required_pixel_count_ratio:
                 positive_red_light_count = positive_red_light_count + 1
-            # cv2.imshow('Red Light', np.hstack([blank, traffic_light_mask]))
+            # cv2.imshow(f'Red Light {index}', np.hstack([traffic_light_mask_red, traffic_light_mask_white]))
 
         if positive_red_light_count / total_red_light_count >= required_red_light_count_ratio:
             self.previous_traffic_light = self.current_traffic_light
@@ -98,20 +134,28 @@ class CameraInstance:
         # yellow light section
         total_yellow_light_count = len(yellow_lights[1])
         positive_yellow_light_count = 0
-        required_yellow_light_count_ratio = 1/2
+        required_yellow_light_count_ratio = 2/3
 
-        for yellow_traffic_light in yellow_lights[1]:
+        for index, yellow_traffic_light in enumerate(yellow_lights[1]):
             position_x, position_y, width, height = yellow_traffic_light.items()
             # create blank image for comparison
             blank = np.zeros((width[1], height[1], 3), dtype='uint8')
-            traffic_light_mask = output[position_y[1]:
-                                        (height[1] + position_y[1]),
-                                        position_x[1]:
-                                        (width[1] + position_x[1])]
+            traffic_light_mask_yellow = yellow_output[position_y[1]:
+                                                      (height[1] +
+                                                       position_y[1]),
+                                                      position_x[1]:
+                                                      (width[1] + position_x[1])]
+            traffic_light_mask_white = white_output[position_y[1]:
+                                                    (height[1] +
+                                                     position_y[1]),
+                                                    position_x[1]:
+                                                    (width[1] + position_x[1])]
 
-            if not np.array_equal(blank, traffic_light_mask):
+            # if not np.array_equal(blank, traffic_light_mask_yellow):
+            #     positive_yellow_light_count = positive_yellow_light_count + 1
+            if self.__analyzeTrafficLight(traffic_light_mask_yellow) >= required_pixel_count_ratio or self.__analyzeTrafficLight(traffic_light_mask_white) >= required_pixel_count_ratio:
                 positive_yellow_light_count = positive_yellow_light_count + 1
-            # cv2.imshow('Yellow Light', np.hstack([blank, traffic_light_mask]))
+            # cv2.imshow(f'Yellow Light {index}', np.hstack([traffic_light_mask_yellow, traffic_light_mask_white]))
 
         if positive_yellow_light_count / total_yellow_light_count >= required_yellow_light_count_ratio:
             self.previous_traffic_light = self.current_traffic_light
@@ -394,7 +438,7 @@ class CameraInstance:
             elif self.current_traffic_light is TrafficLightColor.YELLOW:
                 self.__evidence_frames.append(frame)
                 self.__process(net, scaled_frame)
-        
-        # self.__draw_debug_output(scaled_frame)
+
+        self.__draw_debug_output(scaled_frame)
 
         return success

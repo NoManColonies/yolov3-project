@@ -2,48 +2,70 @@
   "cameras": [
     {
       "name": "10_42_0_2_cam",
-      "path": "10.42.0.2_cam.mkv",
+      "path": "10.42.0.2_cam_4.mkv",
       "detection_box": {
-        "offset_y": 150,
-        "offset_x": 60,
-        "max_y": 530,
-        "max_x": 950,
-        "line_position_y": 180
+        "offset_y": 236,
+        "offset_x": 240,
+        "max_y": 536,
+        "max_x": 878,
+        "line_position_y": 306
       },
       "traffic_lights": {
         "red": [
           {
-            "position_x": 672,
-            "position_y": 32,
-            "width": 5,
-            "height": 5
+            "position_x": 597,
+            "position_y": 160,
+            "width": 17,
+            "height": 10
           },
           {
-            "position_x": 680,
-            "position_y": 32,
-            "width": 5,
+            "position_x": 565,
+            "position_y": 34,
+            "width": 25,
+            "height": 11
+          },
+          {
+            "position_x": 892,
+            "position_y": 61,
+            "width": 13,
             "height": 5
           }
         ],
         "yellow": [
           {
-            "position_x": 672,
-            "position_y": 40,
-            "width": 5,
-            "height": 5
+            "position_x": 601,
+            "position_y": 170,
+            "width": 11,
+            "height": 3
           },
           {
-            "position_x": 680,
-            "position_y": 40,
-            "width": 5,
-            "height": 5
+            "position_x": 568,
+            "position_y": 54,
+            "width": 25,
+            "height": 7
+          },
+          {
+            "position_x": 894,
+            "position_y": 70,
+            "width": 10,
+            "height": 3
           }
         ]
       }
     }
   ],
   "traffic_light_color_boundries": {
-    "low": [0, 19, 150],
-    "high": [214, 204, 255]
+    "red": {
+      "low": [45, 30, 180],
+      "high": [155, 125, 255]
+    },
+    "yellow": {
+      "low": [0, 98, 210],
+      "high": [62, 195, 250]
+    },
+    "white": {
+      "low": [225, 225, 225],
+      "high": [255, 255, 255]
+    }
   }
 }
